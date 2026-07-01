@@ -72,12 +72,10 @@ class VCruiseHelper:
     long_press = False
     button_type = None
 
-    v_cruise_delta = 1. if is_metric else IMPERIAL_INCREMENT
-
     for b in CS.buttonEvents:
-      if b.type.raw in self.button_timers and not b.pressed:
-        if self.button_timers[b.type.raw] > CRUISE_LONG_PRESS:
-          return  # end long press
+      # XT6/personal branch: act on the PRESS edge for a snappier response (upstream waits for release).
+      # The enabling press is harmless: initialize_v_cruise() overwrites v_cruise on the enable edge (see card.py).
+      if b.type.raw in self.button_timers and b.pressed:
         button_type = b.type.raw
         break
     else:
@@ -95,15 +93,16 @@ class VCruiseHelper:
     if button_type == ButtonType.accelCruise and cruise_standstill:
       return
 
-    # Don't adjust speed if we've enabled since the button was depressed (some ports enable on rising edge)
-    if not self.button_change_states[button_type]["enabled"]:
-      return
-
-    v_cruise_delta = v_cruise_delta * (5 if long_press else 1)
-    if long_press and self.v_cruise_kph % v_cruise_delta != 0:  # partial interval
-      self.v_cruise_kph = CRUISE_NEAREST_FUNC[button_type](self.v_cruise_kph / v_cruise_delta) * v_cruise_delta
+    # XT6/personal branch: keep the set speed on whole display units so a long press jumps exactly 5.
+    # Upstream accumulates kph and rounds, which yields uneven mph steps (e.g. 40.8 mph -> +4).
+    step = 5. if long_press else 1.
+    to_display = 1.0 if is_metric else (1. / CV.MPH_TO_KPH)  # kph -> mph
+    v = self.v_cruise_kph * to_display
+    if long_press and round(v) % step != 0:  # snap a partial interval onto the 5-unit grid
+      v = CRUISE_NEAREST_FUNC[button_type](v / step) * step
     else:
-      self.v_cruise_kph += v_cruise_delta * CRUISE_INTERVAL_SIGN[button_type]
+      v = round(v) + step * CRUISE_INTERVAL_SIGN[button_type]
+    self.v_cruise_kph = v / to_display
 
     # If set is pressed while overriding, clip cruise speed to minimum of vEgo
     if CS.gasPressed and button_type in (ButtonType.decelCruise, ButtonType.setCruise):
