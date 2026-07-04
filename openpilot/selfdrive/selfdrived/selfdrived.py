@@ -122,6 +122,7 @@ class SelfdriveD:
     self.not_running_prev = None
     self.experimental_mode = False
     self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+    self.distance_button_frame = None  # frame of the current distance-button press, None if not held/consumed
     self.recalibrating_seen = False
     self.dm_lockout_set = False
     self.dm_uncertain_alerted = False
@@ -426,12 +427,25 @@ class SelfdriveD:
       if self.sm['modelV2'].frameDropPerc > 1:
         self.events.add(EventName.modeldLagging)
 
-    # Decrement personality on distance button press
+    # Distance button: tap cycles personality, 0.5s hold toggles Experimental Mode (XT6 personal branch)
     if self.CP.openpilotLongitudinalControl:
-      if any(not be.pressed and be.type == ButtonType.gapAdjustCruise for be in CS.buttonEvents):
-        self.personality = (self.personality - 1) % 3
-        self.params.put('LongitudinalPersonality', self.personality)
-        self.events.add(EventName.personalityChanged)
+      for be in CS.buttonEvents:
+        if be.type == ButtonType.gapAdjustCruise:
+          if be.pressed:
+            self.distance_button_frame = self.sm.frame
+          elif self.distance_button_frame is not None:
+            # short press released before the hold threshold: cycle personality
+            self.distance_button_frame = None
+            self.personality = (self.personality - 1) % 3
+            self.params.put('LongitudinalPersonality', self.personality)
+            self.events.add(EventName.personalityChanged)
+
+      if self.distance_button_frame is not None and (self.sm.frame - self.distance_button_frame) >= int(0.5 / DT_CTRL):
+        # held past threshold: toggle Experimental Mode and consume the press so release doesn't cycle personality
+        self.distance_button_frame = None
+        if self.CP.alphaLongitudinalAvailable:
+          self.params.put_bool("ExperimentalMode", not self.params.get_bool("ExperimentalMode"))
+          self.events.add(EventName.experimentalModeToggled)
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
