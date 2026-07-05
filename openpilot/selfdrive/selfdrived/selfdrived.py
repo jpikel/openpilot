@@ -444,7 +444,8 @@ class SelfdriveD:
         # held past threshold: toggle Experimental Mode and consume the press so release doesn't cycle personality
         self.distance_button_frame = None
         if self.CP.alphaLongitudinalAvailable:
-          self.params.put_bool("ExperimentalMode", not self.params.get_bool("ExperimentalMode"))
+          # block so the alert callback (which reads the param) sees the new value, not the in-flight old one
+          self.params.put_bool("ExperimentalMode", not self.params.get_bool("ExperimentalMode"), block=True)
           self.events.add(EventName.experimentalModeToggled)
 
   def data_sample(self):

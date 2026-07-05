@@ -249,6 +249,13 @@ class ModelRenderer(Widget):
       # Use HSL to RGB conversion
       color = self._hsla_to_color(path_hue / 360.0, saturation, lightness, alpha)
 
+      # personal: steady cruising renders teal instead of desaturated gray; blend in RGB space
+      # so strong accel/brake still fades to the informative green/red tint (never through green)
+      teal = self._hsla_to_color(187.0 / 360.0, 0.8, 0.6, alpha)
+      b = saturation  # 0 = cruising (teal), 1 = strong accel/brake (stock color)
+      color = rl.Color(int(teal.r + (color.r - teal.r) * b), int(teal.g + (color.g - teal.g) * b),
+                       int(teal.b + (color.b - teal.b) * b), color.a)
+
       gradient_stops.append(lin_grad_point)
       segment_colors.append(color)
 
