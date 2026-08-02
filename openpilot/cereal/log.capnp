@@ -1215,6 +1215,44 @@ struct LongitudinalPlan @0xe00b5b3eba12876c {
   shouldStop @37: Bool;
   allowThrottle @38: Bool;
   allowBrake @39: Bool;
+  leadPreview @40 :LeadPreview;
+
+  struct LeadPreview {
+    state @0 :State;
+    suppression @1 :Suppression;
+    decelPredicted @2 :Bool;
+    predictedDecelTime @3 :Float32;  # seconds; only valid when decelPredicted is true
+    leadIndex @4 :UInt8;  # radarState leadOne/leadTwo index
+    egoSpeed @5 :Float32;
+    egoAcceleration @6 :Float32;
+    leadDistance @7 :Float32;
+    relativeSpeed @8 :Float32;
+    leadSpeed @9 :Float32;
+    leadAcceleration @10 :Float32;
+    leadProbability @11 :Float32;
+    trackStable @12 :Bool;
+    actualDecelOnset @13 :Bool;
+
+    enum State {
+      hidden @0;
+      green @1;
+      amber @2;
+      red @3;
+    }
+
+    enum Suppression {
+      none @0;
+      disengaged @1;
+      noLead @2;
+      stopAndGo @3;
+      driverBraking @4;
+      laneChange @5;
+      fcw @6;
+      lowConfidence @7;
+      unstableLead @8;
+      attribution @9;
+    }
+  }
 
 
   solverExecutionTime @35 :Float32;
