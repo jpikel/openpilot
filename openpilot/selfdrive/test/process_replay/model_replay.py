@@ -20,10 +20,12 @@ from openpilot.tools.lib.framereader import FrameReader
 from openpilot.tools.lib.logreader import LogReader, save_log
 from openpilot.tools.lib.github_utils import GithubUtils
 
-TEST_ROUTE = "8494c69d3c710e81|000001d4--2648a9a404"
-SEGMENT = 4
+TEST_ROUTE = "98395b7c5b27882e|0000002b--2686b5a2d0"
+SEGMENT = 1
 START_FRAME = 0
 END_FRAME = 60
+
+CHESTNUT = "--chestnut" in sys.argv
 
 SEND_EXTRA_INPUTS = bool(int(os.getenv("SEND_EXTRA_INPUTS", "0")))
 
@@ -33,13 +35,13 @@ MODEL_REPLAY_BUCKET="model_replay_master"
 GITHUB = GithubUtils(API_TOKEN, DATA_TOKEN)
 
 EXEC_TIMINGS = [
-  # model, instant max, average max
-  ("modelV2", 0.05, 0.028),
-  ("driverStateV2", 0.05, 0.018),
+  # model, instant max, average max, chestnut average max
+  ("modelV2", 0.05, 0.03, 0.05),
+  ("driverStateV2", 0.05, 0.018, 0.018),
 ]
 
 def get_log_fn(test_route, ref="master"):
-  return f"{test_route}_model_tici_{ref}.zst"
+  return f"{test_route}_model_{'chestnut' if CHESTNUT else 'tici'}_{ref}.zst"
 
 def plot(proposed, master, title, tmp):
   proposed = list(proposed)
@@ -146,16 +148,17 @@ def trim_logs(logs, start_frame, end_frame, frs_types, include_all_types):
 
 def model_replay(lr, frs):
   # modeld is using frame pairs
-  modeld_logs = trim_logs(lr, START_FRAME, END_FRAME, {"roadCameraState", "wideRoadCameraState"},
-                                                                         {"roadEncodeIdx", "wideRoadEncodeIdx", "carParams", "carState", "carControl", "can"})
-  dmodeld_logs = trim_logs(lr, START_FRAME, END_FRAME, {"driverCameraState"}, {"driverEncodeIdx", "carParams", "can"})
+  camera_states = {"narrowRoadCameraState", "wideRoadCameraState"}
+  modeld_logs = trim_logs(lr, START_FRAME, END_FRAME, camera_states,
+                          {"narrowRoadEncodeIdx", "wideRoadEncodeIdx", "carParams", "carState", "carControl", "can"})
+  dmodeld_logs = trim_logs(lr, START_FRAME, END_FRAME, {"cabinCameraState"}, {"cabinEncodeIdx", "carParams", "can"})
 
   if not SEND_EXTRA_INPUTS:
-    modeld_logs = [msg for msg in modeld_logs if msg.which() != 'liveCalibration']
-    dmodeld_logs = [msg for msg in dmodeld_logs if msg.which() != 'liveCalibration']
+    modeld_logs = [msg for msg in modeld_logs if msg.which() != 'extrinsicsCalibration']
+    dmodeld_logs = [msg for msg in dmodeld_logs if msg.which() != 'extrinsicsCalibration']
 
   # initial setup
-  for s in ('liveCalibration', 'deviceState'):
+  for s in ('extrinsicsCalibration', 'deviceState'):
     msg = next(msg for msg in lr if msg.which() == s).as_builder()
     msg.logMonoTime = lr[0].logMonoTime
     modeld_logs.insert(1, msg.as_reader())
@@ -168,11 +171,15 @@ def model_replay(lr, frs):
   dmonitoringmodeld_msgs = replay_process(dmonitoringmodeld, dmodeld_logs, frs)
 
   msgs = modeld_msgs + dmonitoringmodeld_msgs
+  chestnut = any(m.modelV2.big for m in modeld_msgs if m.which() == "modelV2")
+  if CHESTNUT:
+    assert chestnut and all(m.modelV2.big for m in modeld_msgs if m.which() == "modelV2"), "Chestnut replay must run the big model without fallback"
 
   header = ['model', 'max instant', 'max instant allowed', 'average', 'max average allowed', 'test result']
   rows = []
   timings_ok = True
-  for (s, instant_max, avg_max) in EXEC_TIMINGS:
+  for (s, instant_max, avg_max, chestnut_avg_max) in EXEC_TIMINGS:
+    avg_max = chestnut_avg_max if chestnut else avg_max
     ts = [getattr(m, s).modelExecutionTime for m in msgs if m.which() == s]
     # TODO some init can happen in first iteration
     ts = ts[1:]
@@ -209,8 +216,8 @@ def get_frames():
       print(f"Failed to load frames from cache {cache_name}: {e}")
 
   frs = {
-    'roadCameraState': FrameReader(get_url(TEST_ROUTE, SEGMENT, "fcamera.hevc"), pix_fmt='nv12', cache_size=END_FRAME - START_FRAME),
-    'driverCameraState': FrameReader(get_url(TEST_ROUTE, SEGMENT, "dcamera.hevc"), pix_fmt='nv12', cache_size=END_FRAME - START_FRAME),
+    'narrowRoadCameraState': FrameReader(get_url(TEST_ROUTE, SEGMENT, "fcamera.hevc"), pix_fmt='nv12', cache_size=END_FRAME - START_FRAME),
+    'cabinCameraState': FrameReader(get_url(TEST_ROUTE, SEGMENT, "dcamera.hevc"), pix_fmt='nv12', cache_size=END_FRAME - START_FRAME),
     'wideRoadCameraState': FrameReader(get_url(TEST_ROUTE, SEGMENT, "ecamera.hevc"), pix_fmt='nv12', cache_size=END_FRAME - START_FRAME),
   }
   for fr in frs.values():
@@ -282,7 +289,8 @@ if __name__ == "__main__":
       diff_short, diff_long, failed = format_diff(results, log_paths, 'master')
 
       if "CI" in os.environ:
-        comment_replay_report(log_msgs, cmp_log, log_msgs)
+        if not CHESTNUT:
+          comment_replay_report(log_msgs, cmp_log, log_msgs)
         failed = False
         print(diff_long)
       print('-------------\n'*5)

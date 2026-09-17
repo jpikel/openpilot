@@ -5,6 +5,8 @@ import time
 import unittest
 import numpy as np
 from dataclasses import dataclass
+from panda import Panda
+from openpilot.common.hardware import HARDWARE
 from openpilot.common.test import OpenpilotTestCase
 from openpilot.common.utils import tabulate
 
@@ -13,12 +15,15 @@ from openpilot.cereal.services import SERVICE_LIST
 from opendbc.car.car_helpers import get_demo_car_params
 from openpilot.common.mock import mock_messages
 from openpilot.common.params import Params
-from openpilot.common.hardware.tici.power_monitor import get_power
+from openpilot.common.hardware.comma.power_monitor import get_power
+from openpilot.selfdrive.modeld.helpers import chestnut_present
 from openpilot.system.manager.process_config import managed_processes
 from openpilot.system.manager.manager import manager_cleanup
 
 SAMPLE_TIME = 2       # seconds to sample power
 MAX_WARMUP_TIME = 30  # seconds to wait for SAMPLE_TIME consecutive valid samples
+MICI = HARDWARE.get_device_type() == "mici"
+CHESTNUT = chestnut_present()
 
 @dataclass
 class Proc:
@@ -33,19 +38,27 @@ class Proc:
     return '+'.join(self.procs)
 
 
+# MICI readings exclude the separately powered Chestnut GPU.
 PROCS = [
-  Proc(['camerad'], 1.65, atol=0.4, msgs=['roadCameraState', 'wideRoadCameraState', 'driverCameraState']),
-  Proc(['modeld'], 1.5, atol=0.2, msgs=['modelV2']),
+  Proc(['camerad'], 0.85 if MICI else 1.65, atol=0.4, msgs=['narrowRoadCameraState', 'wideRoadCameraState', 'cabinCameraState']),
+  Proc(['modeld'], 0.45 if MICI and CHESTNUT else 1.5, atol=0.2, msgs=['modelV2']),
   Proc(['dmonitoringmodeld'], 0.65, atol=0.35, msgs=['driverStateV2']),
   Proc(['encoderd'], 0.23, msgs=[]),
 ]
 
 
 class TestPowerDraw(OpenpilotTestCase):
-  TICI_TEST = True
+  COMMA_HARDWARE_TEST = True
 
   def setup_method(self):
     Params().put("CarParams", get_demo_car_params().to_bytes(), block=True)
+    self.panda = None
+    if MICI:
+      HARDWARE.reset_internal_panda()
+      self.addCleanup(HARDWARE.reset_internal_panda)
+      Panda.wait_for_panda(None, 30)
+      self.panda = Panda(cli=False)
+      self.addCleanup(self.panda.close)
 
   def teardown_method(self):
     manager_cleanup()
@@ -78,7 +91,7 @@ class TestPowerDraw(OpenpilotTestCase):
     start_time = time.monotonic()
 
     while (time.monotonic() - start_time) < MAX_WARMUP_TIME:
-      power = get_power(1)
+      power = get_power(1, self.panda)
       iteration_msg_counts = {}
       for msg,sock in socks.items():
         iteration_msg_counts[msg] = len(messaging.drain_sock_raw(sock))
@@ -95,9 +108,9 @@ class TestPowerDraw(OpenpilotTestCase):
 
     return now, msg_counts, time.monotonic() - start_time - SAMPLE_TIME
 
-  @mock_messages(['livePose'])
+  @mock_messages(['deviceMotion'])
   def test_camera_procs(self, subtests):
-    baseline = get_power()
+    baseline = get_power(panda=self.panda)
 
     prev = baseline
     used = {}
