@@ -99,7 +99,7 @@ class ModelRenderer(Widget):
     sm = ui_state.sm
 
     # Check if data is up-to-date
-    if (sm.recv_frame["liveCalibration"] < ui_state.started_frame or
+    if (sm.recv_frame["extrinsicsCalibration"] < ui_state.started_frame or
         sm.recv_frame["modelV2"] < ui_state.started_frame):
       return
 
@@ -111,8 +111,8 @@ class ModelRenderer(Widget):
     # Update state
     self._experimental_mode = sm['selfdriveState'].experimentalMode
 
-    live_calib = sm['liveCalibration']
-    self._path_offset_z = live_calib.height[0] if live_calib.height else HEIGHT_INIT[0]
+    extrinsics_calibration = sm['extrinsicsCalibration']
+    self._path_offset_z = extrinsics_calibration.height[0] if extrinsics_calibration.height else HEIGHT_INIT[0]
 
     if sm.updated['carParams']:
       self._update_car_params(sm['carParams'])

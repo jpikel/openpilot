@@ -1,6 +1,7 @@
 import os
 import pyray as rl
 from collections.abc import Callable
+from typing import Union
 
 from openpilot.common.basedir import BASEDIR
 from openpilot.common.params import Params
@@ -9,7 +10,7 @@ from openpilot.system.ui.widgets.scroller import NavRawScrollPanel, NavScroller
 from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigCircleButton
 from openpilot.selfdrive.ui.mici.widgets.dialog import BigDialog, BigConfirmationDialog
 from openpilot.selfdrive.ui.mici.widgets.pairing_dialog import PairingDialog
-from openpilot.selfdrive.ui.mici.onroad.driver_camera_dialog import DriverCameraDialog
+from openpilot.selfdrive.ui.mici.onroad.cabin_camera_dialog import CabinCameraDialog
 from openpilot.selfdrive.ui.mici.layouts.onboarding import TrainingGuide, TermsPage
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.lib.multilang import tr
@@ -77,15 +78,16 @@ def _engaged_confirmation_click(callback: Callable, action_text: str, icon: rl.T
 
 class EngagedConfirmationCircleButton(BigCircleButton):
   def __init__(self, title: str, icon: rl.Texture, callback: Callable[[], None], exit_on_confirm: bool = True,
-               red: bool = False, icon_offset: tuple[int, int] = (0, 0)):
-    super().__init__(icon, red, icon_offset)
+               red: bool = False, icon_offset: tuple[int, int] = (0, 0), *, description: str = ""):
+    super().__init__(icon, red, icon_offset, description=description, title=title)
     self.set_click_callback(lambda: _engaged_confirmation_click(callback, title, icon, exit_on_confirm=exit_on_confirm, red=red))
 
 
 class EngagedConfirmationButton(BigButton):
   def __init__(self, text: str, action_text: str, icon: rl.Texture, callback: Callable[[], None],
-               exit_on_confirm: bool = True, red: bool = False):
-    super().__init__(text, "", icon)
+               exit_on_confirm: bool = True, red: bool = False, *, description: str = "",
+               description_icon: Union[rl.Texture, None] = None):
+    super().__init__(text, "", icon, description=description, description_icon=description_icon)
     self.set_click_callback(lambda: _engaged_confirmation_click(callback, action_text, icon, exit_on_confirm=exit_on_confirm, red=red))
 
 
@@ -177,7 +179,9 @@ class DeviceLayoutMici(NavScroller):
       params.put_bool("OnroadCycleRequested", True, block=True)
 
     reset_calibration_btn = EngagedConfirmationButton("reset calibration", "reset", gui_app.texture("icons_mici/settings/device/lkas.png", 122, 64),
-                                                      reset_calibration_callback)
+                                                      reset_calibration_callback,
+                                                      description="Mount the device within 4° left or right and 5° up or 9° down. openpilot calibrates " +
+                                                                  "continuously; resetting is rarely needed. Resetting clears learned calibration.")
 
     reboot_btn = EngagedConfirmationCircleButton("reboot", gui_app.texture("icons_mici/settings/device/reboot.png", 64, 70),
                                                  reboot_callback, exit_on_confirm=False)
@@ -189,9 +193,10 @@ class DeviceLayoutMici(NavScroller):
     regulatory_btn = BigButton("regulatory info", "", gui_app.texture("icons_mici/settings/device/info.png", 64, 64))
     regulatory_btn.set_click_callback(self._on_regulatory)
 
-    driver_cam_btn = BigButton("driver\ncamera preview", "", gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64))
-    driver_cam_btn.set_click_callback(lambda: gui_app.push_widget(DriverCameraDialog()))
-    driver_cam_btn.set_enabled(lambda: ui_state.is_offroad())
+    cabin_cam_btn = BigButton("driver\ncamera preview", "", gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64),
+                              description="Preview the cabin camera to check driver monitoring visibility. The vehicle must be off.")
+    cabin_cam_btn.set_click_callback(lambda: gui_app.push_widget(CabinCameraDialog()))
+    cabin_cam_btn.set_enabled(lambda: ui_state.is_offroad())
 
     review_training_guide_btn = BigButton("review\ntraining guide", "", gui_app.texture("icons_mici/settings/device/info.png", 64, 64))
     review_training_guide_btn.set_click_callback(lambda: gui_app.push_widget(ReviewTrainingGuide(completed_callback=lambda: gui_app.pop_widgets_to(self))))
@@ -204,7 +209,7 @@ class DeviceLayoutMici(NavScroller):
       DeviceInfoLayoutMici(),
       PairBigButton(),
       review_training_guide_btn,
-      driver_cam_btn,
+      cabin_cam_btn,
       terms_btn,
       regulatory_btn,
       reset_calibration_btn,
