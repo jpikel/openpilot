@@ -1,30 +1,18 @@
 import colorsys
 import numpy as np
 import pyray as rl
-from openpilot.cereal import log, messaging
+from openpilot.cereal import messaging
 from opendbc.car.structs import car
 from dataclasses import dataclass, field
-from openpilot.common.constants import CV
 from openpilot.common.params import Params
 from openpilot.selfdrive.locationd.calibrationd import HEIGHT_INIT
 from openpilot.selfdrive.ui.ui_state import ui_state
-from openpilot.system.ui.lib.application import gui_app, FontWeight
 from openpilot.system.ui.lib.shader_polygon import draw_polygon, Gradient
-from openpilot.system.ui.lib.text_measure import measure_text_cached
 from openpilot.system.ui.widgets import Widget
 
 CLIP_MARGIN = 500
 MIN_DRAW_DISTANCE = 10.0
 MAX_DRAW_DISTANCE = 100.0
-XT6_PLATFORM = "CADILLAC_XT6"
-LEAD_SPEED_FONT_SIZE = 42
-LeadPreviewState = log.LongitudinalPlan.LeadPreview.State
-
-LEAD_PREVIEW_COLORS = {
-  LeadPreviewState.green: rl.Color(80, 205, 125, 255),
-  LeadPreviewState.amber: rl.Color(255, 181, 41, 255),
-  LeadPreviewState.red: rl.Color(242, 62, 72, 255),
-}
 
 STOCK_PATH_GRADIENT = Gradient(
   start=(0.0, 1.0),
@@ -45,19 +33,16 @@ class LeadVehicle:
   glow: list[tuple[float, float]] = field(default_factory=list)
   chevron: list[tuple[float, float]] = field(default_factory=list)
   fill_alpha: int = 0
-  position: tuple[float, float] | None = None
 
 
 class ModelRenderer(Widget):
   def __init__(self):
     super().__init__()
     self._longitudinal_control = False
-    self._lead_preview_enabled = False
     self._lane_line_probs = np.zeros(4, dtype=np.float32)
     self._road_edge_stds = np.zeros(2, dtype=np.float32)
     self._lead_vehicles = [LeadVehicle(), LeadVehicle()]
     self._path_offset_z = HEIGHT_INIT[0]
-    self._lead_speed_font = gui_app.font(FontWeight.SEMI_BOLD)
 
     # Initialize ModelPoints objects
     self._path = ModelPoints()
@@ -80,7 +65,7 @@ class ModelRenderer(Widget):
     # Get longitudinal control setting from car parameters
     if car_params := Params().get("CarParams"):
       cp = messaging.log_from_bytes(car_params, car.CarParams)
-      self._update_car_params(cp)
+      self._longitudinal_control = cp.openpilotLongitudinalControl
 
   def set_transform(self, transform: np.ndarray):
     self._car_space_transform = transform.astype(np.float32)
@@ -104,7 +89,7 @@ class ModelRenderer(Widget):
     self._path_offset_z = extrinsics_calibration.height[0] if extrinsics_calibration.height else HEIGHT_INIT[0]
 
     if sm.updated['carParams']:
-      self._update_car_params(sm['carParams'])
+      self._longitudinal_control = sm['carParams'].openpilotLongitudinalControl
 
     model = sm['modelV2']
     radar_state = sm['radarState'] if sm.valid['radarState'] else None
@@ -131,11 +116,7 @@ class ModelRenderer(Widget):
     self._draw_path()
 
     if render_lead_indicator and radar_state:
-      self._draw_lead_indicator(sm)
-
-  def _update_car_params(self, cp):
-    self._longitudinal_control = cp.openpilotLongitudinalControl
-    self._lead_preview_enabled = self._longitudinal_control and cp.carFingerprint == XT6_PLATFORM
+      self._draw_lead_indicator()
 
   def _update_raw_points(self, model):
     """Update raw 3D points from model data"""
@@ -260,7 +241,7 @@ class ModelRenderer(Widget):
     glow = [(x + (sz * 1.35) + g_xo, y + sz + g_yo), (x, y - g_yo), (x - (sz * 1.35) - g_xo, y + sz + g_yo)]
     chevron = [(x + (sz * 1.25), y + sz), (x, y), (x - (sz * 1.25), y + sz)]
 
-    return LeadVehicle(glow=glow, chevron=chevron, fill_alpha=int(fill_alpha), position=(x, y))
+    return LeadVehicle(glow=glow, chevron=chevron, fill_alpha=int(fill_alpha))
 
   def _draw_lane_lines(self):
     """Draw lane lines and road edges"""
@@ -291,11 +272,7 @@ class ModelRenderer(Widget):
     else:
       draw_polygon(self._rect, self._path.projected_points, rl.Color(255, 255, 255, 30))
 
-  def _draw_lead_indicator(self, sm):
-    if self._lead_preview_enabled:
-      self._draw_xt6_lead_preview(sm)
-      return
-
+  def _draw_lead_indicator(self):
     # Draw lead vehicles if available
     for lead in self._lead_vehicles:
       if not lead.glow or not lead.chevron:
@@ -303,34 +280,6 @@ class ModelRenderer(Widget):
 
       rl.draw_triangle_fan(lead.glow, len(lead.glow), rl.Color(218, 202, 37, 255))
       rl.draw_triangle_fan(lead.chevron, len(lead.chevron), rl.Color(201, 34, 49, lead.fill_alpha))
-
-  def _draw_xt6_lead_preview(self, sm):
-    if not sm.valid['longitudinalPlan']:
-      return
-
-    preview = sm['longitudinalPlan'].leadPreview
-    if preview.state == LeadPreviewState.hidden or preview.leadIndex >= len(self._lead_vehicles):
-      return
-
-    lead = self._lead_vehicles[preview.leadIndex]
-    color = LEAD_PREVIEW_COLORS.get(preview.state)
-    if color is None or not lead.glow or not lead.chevron or lead.position is None:
-      return
-
-    glow_color = rl.Color(color.r, color.g, color.b, 90)
-    rl.draw_triangle_fan(lead.glow, len(lead.glow), glow_color)
-    rl.draw_triangle_fan(lead.chevron, len(lead.chevron), color)
-
-    speed_conversion = CV.MS_TO_KPH if ui_state.is_metric else CV.MS_TO_MPH
-    lead_speed = preview.leadSpeed if np.isfinite(preview.leadSpeed) else 0.0
-    speed_text = str(round(max(0.0, lead_speed) * speed_conversion))
-    text_size = measure_text_cached(self._lead_speed_font, speed_text, LEAD_SPEED_FONT_SIZE)
-    x, y = lead.position
-    text_x = np.clip(x - text_size.x / 2, self._rect.x + 8, self._rect.x + self._rect.width - text_size.x - 8)
-    text_y = max(self._rect.y + 8, y - text_size.y - 14)
-    background = rl.Rectangle(text_x - 12, text_y - 5, text_size.x + 24, text_size.y + 10)
-    rl.draw_rectangle_rounded(background, 0.35, 8, rl.Color(0, 0, 0, 150))
-    rl.draw_text_ex(self._lead_speed_font, speed_text, rl.Vector2(text_x, text_y), LEAD_SPEED_FONT_SIZE, 0, rl.WHITE)
 
   @staticmethod
   def _get_path_length_idx(pos_x_array: np.ndarray, path_distance: float) -> int:

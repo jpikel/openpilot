@@ -2,7 +2,6 @@
 import numpy as np
 
 import openpilot.cereal.messaging as messaging
-from openpilot.cereal import log
 from opendbc.car.interfaces import ACCEL_MIN, ACCEL_MAX
 from openpilot.common.constants import CV
 from openpilot.common.filter_simple import FirstOrderFilter
@@ -13,7 +12,6 @@ from openpilot.selfdrive.controls.lib.longcontrol import LongCtrlState
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import LongitudinalMpc, LongitudinalPlanSource
 from openpilot.selfdrive.controls.lib.longitudinal_mpc_lib.long_mpc import T_IDXS as T_IDXS_MPC
 from openpilot.selfdrive.controls.lib.drive_helpers import CONTROL_N, get_accel_from_plan, should_stop
-from openpilot.selfdrive.controls.lib.lead_preview import LeadPreview, LeadPreviewResult
 from openpilot.selfdrive.car.cruise import V_CRUISE_MAX, V_CRUISE_UNSET
 from openpilot.common.swaglog import cloudlog
 
@@ -21,8 +19,6 @@ J_CRUISE_VALS = [1.6, 1.2, 0.8, 0.6]
 J_CRUISE_BP = [0., 10.0, 25., 40.]
 A_CRUISE_MIN = -0.5
 CONTROL_N_T_IDX = ModelConstants.T_IDXS[:CONTROL_N]
-XT6_PLATFORM = "CADILLAC_XT6"
-LaneChangeState = log.LaneChangeState
 
 
 def get_cruise_accel(v_cruise, v_ego, a_cruise_prev, a_target_prev, dt):
@@ -40,9 +36,6 @@ class LongitudinalPlanner:
     self.fcw = False
     self.dt = dt
     self.accel_boost = AccelBoost()
-    self.lead_preview_enabled = CP.openpilotLongitudinalControl and CP.carFingerprint == XT6_PLATFORM
-    self.lead_preview = LeadPreview(dt)
-    self.lead_preview_result = LeadPreviewResult()
 
     self.v_desired_filter = FirstOrderFilter(init_v, 2.0, self.dt)
     self.a_cruise = init_a
@@ -118,27 +111,6 @@ class LongitudinalPlanner:
     self.output_should_stop = any(should_stop for _, _, should_stop in candidates)
     self.output_a_target = np.clip(output_a_target, ACCEL_MIN, ACCEL_MAX)
 
-    if self.lead_preview_enabled:
-      limiting_lead_index = None
-      if self.mpc.source == LongitudinalPlanSource.lead0:
-        limiting_lead_index = 0
-      elif self.mpc.source == LongitudinalPlanSource.lead1:
-        limiting_lead_index = 1
-
-      self.lead_preview_result = self.lead_preview.update(
-        engaged=sm['selfdriveState'].enabled,
-        ego_speed=v_ego,
-        ego_acceleration=sm['carState'].aEgo,
-        brake_pressed=sm['carState'].brakePressed,
-        standstill=sm['carState'].standstill,
-        lane_change_active=sm['modelV2'].meta.laneChangeState != LaneChangeState.off,
-        fcw=self.fcw,
-        limiting_lead_index=limiting_lead_index,
-        plan_times=T_IDXS_MPC,
-        planned_accelerations=self.mpc.a_solution,
-        leads=(sm['radarState'].leadOne, sm['radarState'].leadTwo),
-      )
-
     self.v_desired_filter.x = self.v_desired_filter.x + self.dt * (self.output_a_target + a_prev) / 2.0
 
   def publish(self, sm, pm):
@@ -163,21 +135,5 @@ class LongitudinalPlanner:
     longitudinalPlan.accelBoost = float(self.accel_boost.total_boost)
     longitudinalPlan.shouldStop = bool(self.output_should_stop)
     longitudinalPlan.allowBrake = True
-
-    preview = longitudinalPlan.init('leadPreview')
-    preview.state = self.lead_preview_result.state.value
-    preview.suppression = self.lead_preview_result.suppression.value
-    preview.decelPredicted = self.lead_preview_result.decel_predicted
-    preview.predictedDecelTime = self.lead_preview_result.predicted_decel_time
-    preview.leadIndex = self.lead_preview_result.lead_index
-    preview.egoSpeed = self.lead_preview_result.ego_speed
-    preview.egoAcceleration = self.lead_preview_result.ego_acceleration
-    preview.leadDistance = self.lead_preview_result.lead_distance
-    preview.relativeSpeed = self.lead_preview_result.relative_speed
-    preview.leadSpeed = self.lead_preview_result.lead_speed
-    preview.leadAcceleration = self.lead_preview_result.lead_acceleration
-    preview.leadProbability = self.lead_preview_result.lead_probability
-    preview.trackStable = self.lead_preview_result.track_stable
-    preview.actualDecelOnset = self.lead_preview_result.actual_decel_onset
 
     pm.send('longitudinalPlan', plan_send)
