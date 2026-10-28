@@ -12,6 +12,7 @@ from openpilot.selfdrive.ui.mici.onroad.long_indicator import LongIndicator
 from openpilot.selfdrive.ui.mici.onroad.model_renderer import ModelRenderer
 from openpilot.selfdrive.ui.mici.onroad.navigation import NavigationPanel, PANEL_WIDTH
 from openpilot.selfdrive.ui.mici.onroad.confidence_ball import ConfidenceBall
+from openpilot.selfdrive.ui.mici.onroad.lane_offset_buttons import LaneOffsetButtons
 from openpilot.selfdrive.ui.mici.onroad.cameraview import CameraView
 from openpilot.system.ui.lib.application import FontWeight, gui_app, MousePos, MouseEvent, TextAlignment, TextAlignmentVertical
 from openpilot.system.ui.widgets.label import UnifiedLabel
@@ -177,6 +178,7 @@ class AugmentedRoadView(CameraView):
     self._alert_renderer = AlertRenderer()
     self._driver_state_renderer = DriverStateRenderer()
     self._confidence_ball = ConfidenceBall()
+    self._lane_offset_buttons = LaneOffsetButtons()
     self._offroad_label = UnifiedLabel("start the car to\nuse openpilot", 54, FontWeight.DISPLAY,
                                        text_color=rl.Color(255, 255, 255, int(255 * 0.9)),
                                        alignment=TextAlignment.CENTER,
@@ -199,7 +201,14 @@ class AugmentedRoadView(CameraView):
     else:
       self._offroad_label.set_text("start the car to\nuse openpilot")
 
+  def _handle_mouse_press(self, mouse_pos: MousePos):
+    self._lane_offset_buttons.handle_press(mouse_pos)
+    super()._handle_mouse_press(mouse_pos)
+
   def _handle_mouse_release(self, mouse_pos: MousePos):
+    # Lane offset taps adjust the offset instead of leaving the onroad view
+    if self._lane_offset_buttons.handle_release(mouse_pos):
+      return
     # Don't trigger click callback if bookmark was triggered
     if not self._bookmark_icon.interacting():
       super()._handle_mouse_release(mouse_pos)
@@ -257,6 +266,9 @@ class AugmentedRoadView(CameraView):
     self._hud_renderer.set_can_draw_top_icons(alert_to_render is None)
     self._hud_renderer.set_wheel_critical_icon(alert_to_render is not None and not not_animating_out and
                                                alert_to_render.visual_alert == car.CarControl.HUDControl.VisualAlert.steerRequired)
+    # Under alerts, and hidden while one is showing so a tap can't land on a button the driver can't see
+    self._lane_offset_buttons.render(self._content_rect, ui_state.lane_offset_buttons and alert_to_render is None,
+                                     self.is_pressed)
     self._alert_renderer.render(self._content_rect)
     self._hud_renderer.render(self._content_rect)
 

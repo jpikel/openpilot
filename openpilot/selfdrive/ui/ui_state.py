@@ -90,6 +90,8 @@ class UIState:
     self.is_release = self.params.get_bool("IsReleaseBranch")
     self.always_on_dm: bool = self.params.get_bool("AlwaysOnDM")
     self.navigation_enabled: bool = self.params.get_bool("NavigationEnabled")
+    self.lane_offset_buttons: bool = self.params.get_bool("LaneOffsetButtons")
+    self.lane_offset_cm: int = self.params.get("LaneOffsetCm", return_default=True) or 0
     self.nav_destination_set: bool = self.params.get("NavDestination") is not None
     self.chestnut_present: bool = False
     self.chestnut_compiled: bool = chestnut_compiled()
@@ -253,6 +255,8 @@ class UIState:
     self.initial_cruise_speed = self.params.get("InitialCruiseSpeedKph", return_default=True)
     self.always_on_dm = self.params.get_bool("AlwaysOnDM")
     self.navigation_enabled = self.params.get_bool("NavigationEnabled")
+    self.lane_offset_buttons = self.params.get_bool("LaneOffsetButtons")
+    self.lane_offset_cm = self.params.get("LaneOffsetCm", return_default=True) or 0
     self.nav_destination_set = self.params.get("NavDestination") is not None
     self.chestnut_active = self.params.get("ChestnutActive")
     self.chestnut_loading = self.params.get_bool("ChestnutLoading")
