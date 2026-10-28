@@ -1,11 +1,12 @@
 from openpilot.cereal import log
 
 from openpilot.system.ui.widgets.scroller import NavScroller
-from openpilot.selfdrive.ui.mici.widgets.button import BigToggle, BigParamControl, BigMultiParamToggle
+from openpilot.selfdrive.ui.mici.widgets.button import BigButton, BigToggle, BigParamControl, BigMultiParamToggle
 from openpilot.system.ui.lib.application import gui_app
 from openpilot.selfdrive.ui.layouts.settings.common import restart_needed_callback
 from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.selfdrive.ui.mici.layouts.settings.initial_cruise_speed import InitialCruiseSpeedButton
+from openpilot.selfdrive.ui.mici.onroad.lane_offset_buttons import format_offset
 
 PERSONALITY_TO_INT = log.LongitudinalPersonality.schema.enumerants
 
@@ -25,6 +26,12 @@ class TogglesLayoutMici(NavScroller):
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")
+    lane_offset_buttons_toggle = BigParamControl("lane offset buttons", "LaneOffsetButtons",
+                                                 description="Show big - and + buttons while driving.\n" +
+                                                             "Tap + to ride further right, - to ride further left.\n" +
+                                                             "The offset is remembered between drives.")
+    self._lane_offset_reset = BigButton("reset lane offset", " ", description="Tap to go back to the model's own lane position.")
+    self._lane_offset_reset.set_click_callback(self._on_lane_offset_reset)
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM", description="Monitor the driver even when openpilot is not engaged.")
     record_front = BigParamControl("record & upload cabin camera", "RecordFront",
                                    description_icon=gui_app.texture("icons_mici/settings/device/cameras.png", 64, 64),
@@ -42,6 +49,8 @@ class TogglesLayoutMici(NavScroller):
       self._initial_cruise_speed,
       is_metric_toggle,
       ldw_toggle,
+      lane_offset_buttons_toggle,
+      self._lane_offset_reset,
       always_on_dm_toggle,
       record_front,
       record_mic,
@@ -52,6 +61,7 @@ class TogglesLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
+      ("LaneOffsetButtons", lane_offset_buttons_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
@@ -85,9 +95,14 @@ class TogglesLayoutMici(NavScroller):
     ui_state.params.put_bool("IsMetric", state, block=True)
     self._update_toggles()
 
+  def _on_lane_offset_reset(self):
+    ui_state.params.put("LaneOffsetCm", 0, block=True)
+    self._update_toggles()
+
   def _update_toggles(self):
     ui_state.update_params()
     self._initial_cruise_speed.refresh()
+    self._lane_offset_reset.set_value(format_offset(ui_state.lane_offset_cm, ui_state.is_metric))
 
     if ui_state.CP is not None:
       self._personality_toggle.set_visible(ui_state.has_longitudinal_control)

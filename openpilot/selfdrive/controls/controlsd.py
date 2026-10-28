@@ -19,6 +19,7 @@ from openpilot.selfdrive.controls.lib.latcontrol_angle import LatControlAngle, S
 from openpilot.selfdrive.controls.lib.latcontrol_curvature import LatControlCurvature
 from openpilot.selfdrive.controls.lib.latcontrol_torque import LatControlTorque
 from openpilot.selfdrive.controls.lib.longcontrol import LongControl
+from openpilot.selfdrive.controls.lib.lane_offset import LaneOffset
 from openpilot.selfdrive.modeld.modeld import LAT_SMOOTH_SECONDS
 from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 
@@ -46,6 +47,10 @@ class Controls:
     self.steer_limited_by_safety = False
     self.curvature = 0.0
     self.desired_curvature = 0.0
+
+    self.lane_offset = LaneOffset()
+    self.lane_offset.update_param(self.params.get("LaneOffsetCm", return_default=True))
+    self.frame = 0
 
     self.pose_calibrator = PoseCalibrator()
     self.calibrated_pose: Pose | None = None
@@ -124,6 +129,7 @@ class Controls:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+      new_desired_curvature += self.lane_offset.update(CC.latActive, CS.vEgo, model_v2.meta.laneChangeState)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
@@ -228,6 +234,9 @@ class Controls:
     rk = Ratekeeper(100, print_delay_threshold=None)
     while True:
       self.update()
+      if self.frame % 50 == 0:
+        self.lane_offset.update_param(self.params.get("LaneOffsetCm", return_default=True))
+      self.frame += 1
       CC, lac_log = self.state_control()
       self.publish(CC, lac_log)
       rk.monitor_time()
