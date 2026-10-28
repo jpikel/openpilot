@@ -1015,6 +1015,15 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
     ET.WARNING: experimental_mode_toggled_alert,
   },
 
+  # Personal: always-on lateral
+  EventName.steeringOnly: {
+    ET.WARNING: Alert(
+      "Steering Only",
+      "Cruise is off - tap brake freely",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
+  },
+
   EventName.userBookmark: {
     ET.PERMANENT: NormalPermanentAlert("Bookmark Saved", duration=1.5),
   },

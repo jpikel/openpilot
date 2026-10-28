@@ -21,6 +21,7 @@ from openpilot.selfdrive.locationd.helpers import PoseCalibrator, Pose
 from openpilot.selfdrive.selfdrived.events import Events, ET
 from openpilot.selfdrive.selfdrived.helpers import ExcessiveActuationCheck
 from openpilot.selfdrive.selfdrived.state import StateMachine
+from openpilot.selfdrive.selfdrived.always_on_lat import AlwaysOnLateral, ALT_EXP_ALWAYS_ON_LATERAL
 from openpilot.selfdrive.selfdrived.alertmanager import AlertManager, set_offroad_alert
 
 from openpilot.common.version import get_build_metadata
@@ -111,6 +112,8 @@ class SelfdriveD:
     self.CS_prev = car.CarState.new_message()
     self.AM = AlertManager()
     self.events = Events()
+    # Personal: always-on lateral (steering stays on through brake / stock ACC cancel)
+    self.always_on_lat = AlwaysOnLateral(bool(self.CP.alternativeExperience & ALT_EXP_ALWAYS_ON_LATERAL))
 
     self.initialized = False
     self.enabled = False
@@ -239,7 +242,14 @@ class SelfdriveD:
     # Add car events, ignore if CAN isn't valid
     if CS.canValid:
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
+      # Personal: while armed, brake / stock ACC cancel don't disengage; cruise main off does
+      self.always_on_lat.update(CS, self.CS_prev, self.enabled)
+      car_events = self.always_on_lat.filter_car_events(car_events, CS)
       self.events.add_from_msg(car_events)
+      if self.always_on_lat.must_disable(CS, self.enabled):
+        self.events.add(EventName.pcmDisable)
+      if self.always_on_lat.entered_steering_only:
+        self.events.add(EventName.steeringOnly)
 
       if self.CP.notCar:
         # wait for everything to init first
@@ -249,8 +259,8 @@ class SelfdriveD:
 
       # Disable on rising edge of accelerator or brake. Also disable on brake when speed > 0
       if (CS.gasPressed and not self.CS_prev.gasPressed and self.disengage_on_accelerator) or \
-        (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill)) or \
-        (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill)):
+        (CS.brakePressed and (not self.CS_prev.brakePressed or not CS.standstill) and not self.always_on_lat.armed) or \
+        (CS.regenBraking and (not self.CS_prev.regenBraking or not CS.standstill) and not self.always_on_lat.armed):
         self.events.add(EventName.pedalPressed)
 
     # Create events for temperature, disk space, and memory
