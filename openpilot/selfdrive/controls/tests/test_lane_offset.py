@@ -146,6 +146,16 @@ class TestAutoCenterIntegrator:
       lo.update(False, 25.0, LaneChangeState.off, m, False, True)
     assert lo.learned == start  # kept while inactive
 
+  def test_freezes_while_lane_widens(self):
+    # an exit lane forming on the right moves the measured center right; don't chase it
+    lo = LaneOffset()
+    learn(lo, make_model_at(0.0), 1000)
+    assert lo.learned == 0.0
+    for i in range(300):
+      width = 3.6 + 0.6 * i / 300
+      learn(lo, make_model_at(-(width - 3.6) / 2, width), 1)
+    assert lo.learned < 0.01
+
   def test_clip(self):
     lo = LaneOffset()
     lo.learned = MAX_LEARNED - 1e-6

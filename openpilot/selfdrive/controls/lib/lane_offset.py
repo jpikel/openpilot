@@ -24,7 +24,9 @@ MAX_LEARNED = 0.25  # m/s^2
 MAX_ERR = 1.0  # m, bigger errors are likely a mis-measurement or lane split
 MIN_LINE_PROB = 0.7
 MAX_LINE_STD = 0.25  # m
-LANE_WIDTH_RANGE = (2.6, 4.6)  # m
+LANE_WIDTH_RANGE = (2.6, 4.2)  # m
+MAX_WIDTH_CHANGE = 0.25  # m vs the recent average, a lane forming or splitting (exits, merges) moves the measured center
+WIDTH_FILTER_TC = 5.0  # s
 
 LaneChangeState = log.LaneChangeState
 
@@ -33,8 +35,8 @@ def clip_offset_cm(offset_cm: int) -> int:
   return int(np.clip(offset_cm, -LANE_OFFSET_MAX_CM, LANE_OFFSET_MAX_CM))
 
 
-def measure_lane_position(model_v2) -> float | None:
-  """Car position relative to lane center in metres (positive = right of center), None if lane lines are unreliable."""
+def measure_lane(model_v2) -> tuple[float, float] | None:
+  """(car position relative to lane center in metres, positive = right of center; lane width), None if lane lines are unreliable."""
   lines, probs, stds = model_v2.laneLines, model_v2.laneLineProbs, model_v2.laneLineStds
   if len(lines) < 3 or len(probs) < 3:
     return None
@@ -47,15 +49,22 @@ def measure_lane_position(model_v2) -> float | None:
 
   y_left = float(np.interp(0.0, lines[1].x, lines[1].y))
   y_right = float(np.interp(0.0, lines[2].x, lines[2].y))
-  if not LANE_WIDTH_RANGE[0] <= y_right - y_left <= LANE_WIDTH_RANGE[1]:
+  width = y_right - y_left
+  if not LANE_WIDTH_RANGE[0] <= width <= LANE_WIDTH_RANGE[1]:
     return None
-  return -(y_left + y_right) / 2.0
+  return -(y_left + y_right) / 2.0, width
+
+
+def measure_lane_position(model_v2) -> float | None:
+  lane = measure_lane(model_v2)
+  return lane[0] if lane is not None else None
 
 
 class LaneOffset:
   def __init__(self):
     self.offset_cm = 0
     self.learned = 0.0  # m/s^2, kept across disengagements within a drive
+    self.width_filter = FirstOrderFilter(0.0, WIDTH_FILTER_TC, DT_CTRL, initialized=False)
     self.filter = FirstOrderFilter(0.0, FILTER_TC, DT_CTRL)
 
   def update_param(self, offset_cm) -> None:
@@ -84,8 +93,12 @@ class LaneOffset:
   def _learn(self, v_ego: float, model_v2, steering_pressed: bool) -> None:
     if steering_pressed or v_ego < FADE_SPEEDS[1] or model_v2 is None:
       return
-    pos = measure_lane_position(model_v2)
-    if pos is None:
+    lane = measure_lane(model_v2)
+    if lane is None:
+      return
+    pos, width = lane
+    width_avg = self.width_filter.update(width)
+    if abs(width - width_avg) > MAX_WIDTH_CHANGE:
       return
     err = self.offset_cm / 100.0 - pos
     if abs(err) > MAX_ERR:
