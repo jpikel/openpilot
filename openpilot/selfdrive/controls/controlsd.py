@@ -50,6 +50,7 @@ class Controls:
 
     self.lane_offset = LaneOffset()
     self.lane_offset.update_param(self.params.get("LaneOffsetCm", return_default=True))
+    self.lane_auto_center = self.params.get_bool("LaneAutoCenter")
     self.frame = 0
 
     self.pose_calibrator = PoseCalibrator()
@@ -129,7 +130,8 @@ class Controls:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
       new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
-      new_desired_curvature += self.lane_offset.update(CC.latActive, CS.vEgo, model_v2.meta.laneChangeState)
+      new_desired_curvature += self.lane_offset.update(CC.latActive, CS.vEgo, model_v2.meta.laneChangeState,
+                                                       model_v2, CS.steeringPressed, self.lane_auto_center)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 
@@ -236,6 +238,7 @@ class Controls:
       self.update()
       if self.frame % 50 == 0:
         self.lane_offset.update_param(self.params.get("LaneOffsetCm", return_default=True))
+        self.lane_auto_center = self.params.get_bool("LaneAutoCenter")
       self.frame += 1
       CC, lac_log = self.state_control()
       self.publish(CC, lac_log)

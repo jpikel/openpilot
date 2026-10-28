@@ -26,6 +26,9 @@ class TogglesLayoutMici(NavScroller):
     ldw_toggle = BigParamControl("lane departure warnings", "IsLdwEnabled",
                                  description="Warn when you drift across a detected lane line.\n" +
                                              "Only above 31 mph (50 km/h), with no turn signal.")
+    lane_auto_center_toggle = BigParamControl("lane auto-center", "LaneAutoCenter",
+                                              description="Learn where the lane center is and steer toward it.\n" +
+                                                          "The lane offset buttons then move you off center.")
     lane_offset_buttons_toggle = BigParamControl("lane offset buttons", "LaneOffsetButtons",
                                                  description="Show big - and + buttons while driving.\n" +
                                                              "Tap + to ride further right, - to ride further left.\n" +
@@ -49,6 +52,7 @@ class TogglesLayoutMici(NavScroller):
       self._initial_cruise_speed,
       is_metric_toggle,
       ldw_toggle,
+      lane_auto_center_toggle,
       lane_offset_buttons_toggle,
       self._lane_offset_reset,
       always_on_dm_toggle,
@@ -61,6 +65,7 @@ class TogglesLayoutMici(NavScroller):
     self._refresh_toggles = (
       ("IsMetric", is_metric_toggle),
       ("IsLdwEnabled", ldw_toggle),
+      ("LaneAutoCenter", lane_auto_center_toggle),
       ("LaneOffsetButtons", lane_offset_buttons_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),
