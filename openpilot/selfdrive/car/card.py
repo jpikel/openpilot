@@ -20,6 +20,7 @@ from opendbc.car.car_helpers import get_car, interfaces
 from opendbc.car.interfaces import CarInterfaceBase, RadarInterfaceBase
 from openpilot.selfdrive.pandad import can_capnp_to_list, can_list_to_can_capnp
 from openpilot.selfdrive.car.cruise import VCruiseHelper
+from openpilot.selfdrive.selfdrived.always_on_lat import ALT_EXP_ALWAYS_ON_LATERAL
 
 REPLAY = "REPLAY" in os.environ
 
@@ -116,6 +117,11 @@ class Car:
       safety_config = structs.CarParams.SafetyConfig()
       safety_config.safetyModel = structs.CarParams.SafetyModel.noOutput
       self.CP.safetyConfigs = [safety_config]
+
+    # Personal: always-on lateral. Tells panda to keep controls_allowed through brake/ACC cancel (GM camera, stock cruise only).
+    if (self.params.get_bool("AlwaysOnLateral") and self.CP.brand == "gm" and self.CP.pcmCruise and
+        self.CP.networkLocation == structs.CarParams.NetworkLocation.fwdCamera and not self.CP.passive):
+      self.CP.alternativeExperience |= ALT_EXP_ALWAYS_ON_LATERAL
 
     if self.CP.secOcRequired:
       # Copy user key if available

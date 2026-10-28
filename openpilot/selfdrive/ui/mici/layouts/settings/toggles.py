@@ -33,6 +33,10 @@ class TogglesLayoutMici(NavScroller):
                                                  description="Show big - and + buttons while driving.\n" +
                                                              "Tap + to ride further right, - to ride further left.\n" +
                                                              "The offset is remembered between drives.")
+    always_on_lat_toggle = BigParamControl("always-on steering", "AlwaysOnLateral", toggle_callback=restart_needed_callback,
+                                           description="Keep openpilot steering when you brake or cancel cruise.\n" +
+                                                       "Turn off the cruise main switch to stop steering.\n" +
+                                                       "Only with stock adaptive cruise.")
     self._lane_offset_reset = BigButton("reset lane offset", " ", description="Tap to go back to the model's own lane position.")
     self._lane_offset_reset.set_click_callback(self._on_lane_offset_reset)
     always_on_dm_toggle = BigParamControl("always-on driver monitor", "AlwaysOnDM", description="Monitor the driver even when openpilot is not engaged.")
@@ -55,6 +59,7 @@ class TogglesLayoutMici(NavScroller):
       lane_auto_center_toggle,
       lane_offset_buttons_toggle,
       self._lane_offset_reset,
+      always_on_lat_toggle,
       always_on_dm_toggle,
       record_front,
       record_mic,
@@ -67,6 +72,7 @@ class TogglesLayoutMici(NavScroller):
       ("IsLdwEnabled", ldw_toggle),
       ("LaneAutoCenter", lane_auto_center_toggle),
       ("LaneOffsetButtons", lane_offset_buttons_toggle),
+      ("AlwaysOnLateral", always_on_lat_toggle),
       ("AlwaysOnDM", always_on_dm_toggle),
       ("RecordFront", record_front),
       ("RecordAudio", record_mic),
