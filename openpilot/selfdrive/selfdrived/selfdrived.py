@@ -128,6 +128,7 @@ class SelfdriveD:
     self.not_running_prev = None
     self.personality = self.params.get("LongitudinalPersonality", return_default=True)
     self.distance_button_frame = None  # frame of the current distance-button press, None if not held/consumed
+    self.steering_paused = False
     self.recalibrating_seen = False
     self.dm_lockout_set = False
     self.dm_uncertain_alerted = False
@@ -243,7 +244,7 @@ class SelfdriveD:
     if CS.canValid:
       car_events = self.car_events.update(CS, self.CS_prev, self.sm['carControl']).to_msg()
       # Personal: while armed, brake / stock ACC cancel don't disengage; cruise main off does
-      self.always_on_lat.update(CS, self.CS_prev, self.enabled)
+      self.always_on_lat.update(CS, self.CS_prev, self.enabled and not self.steering_paused)
       car_events = self.always_on_lat.filter_car_events(car_events, CS)
       self.events.add_from_msg(car_events)
       if self.always_on_lat.must_disable(CS, self.enabled):
@@ -486,6 +487,15 @@ class SelfdriveD:
           self.params.put_bool("ExperimentalMode", not self.params.get_bool("ExperimentalMode"), block=True)
           self.events.add(EventName.experimentalModeToggled)
 
+    # LKA button: toggle steering pause (XT6 personal branch)
+    for be in CS.buttonEvents:
+      if be.type == ButtonType.lkas and be.pressed:
+        self.steering_paused = not self.steering_paused
+        if self.steering_paused:
+          self.events.add(EventName.steeringPaused)
+        else:
+          self.events.add(EventName.steeringResumed)
+
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
     CS = _car_state.carState if _car_state else self.CS_prev
@@ -556,6 +566,7 @@ class SelfdriveD:
     ss.state = self.state_machine.state
     ss.engageable = not self.events.contains(ET.NO_ENTRY)
     ss.personality = self.personality
+    ss.steeringPaused = self.steering_paused
 
     ss.alertText1 = self.AM.current_alert.alert_text_1
     ss.alertText2 = self.AM.current_alert.alert_text_2

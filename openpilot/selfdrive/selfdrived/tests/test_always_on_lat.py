@@ -91,12 +91,17 @@ class TestAlwaysOnLateral:
   def test_steering_only_alert_defined(self):
     assert ET.WARNING in EVENTS[EventName.steeringOnly]
 
+  def test_steering_pause_alerts_defined(self):
+    assert ET.WARNING in EVENTS[EventName.steeringPaused]
+    assert ET.WARNING in EVENTS[EventName.steeringResumed]
+
 
 class TestAlwaysOnLateralStateMachine:
   """Drive the filter + state machine the way selfdrived does, for a stock-ACC GM car."""
 
-  def step(self, aol, sm, CS, brake=False, cancel=False):
-    aol.update(CS, CS, sm.state != State.disabled)
+  def step(self, aol, sm, CS, brake=False, cancel=False, steering_paused=False):
+    op_enabled = sm.state != State.disabled
+    aol.update(CS, CS, op_enabled and not steering_paused)
     car_events = []
     if not CS.cruiseState.available:
       car_events.append(EventName.wrongCarMode)
@@ -106,7 +111,7 @@ class TestAlwaysOnLateralStateMachine:
       car_events.append(EventName.buttonCancel)
     events = Events()
     events.add_from_msg(aol.filter_car_events(make_car_events(*car_events), CS))
-    if aol.must_disable(CS, sm.state != State.disabled):
+    if aol.must_disable(CS, op_enabled):
       events.add(EventName.pcmDisable)
     if brake and not aol.armed:
       events.add(EventName.pedalPressed)
@@ -134,3 +139,32 @@ class TestAlwaysOnLateralStateMachine:
     aol, sm = AlwaysOnLateral(False), StateMachine()
     assert self.step(aol, sm, make_cs(True, True))[0]
     assert not self.step(aol, sm, make_cs(True, False))[0]
+
+  def test_steering_paused_disarms_aol_and_allows_brake_disengage_sticky(self):
+    """When steering is paused via LKA button: AOL is disarmed, brake tap cancels, re-engage stays paused."""
+    aol, sm = AlwaysOnLateral(True), StateMachine()
+    # Engaged normally with AOL: first step enables, second step arms AOL
+    assert self.step(aol, sm, make_cs(True, True), steering_paused=False)[0]
+    assert self.step(aol, sm, make_cs(True, True), steering_paused=False)[0]
+    assert aol.armed
+
+    # LKA button pressed -> steering paused
+    steering_paused = True
+    assert self.step(aol, sm, make_cs(True, True), steering_paused=steering_paused)[0]
+    assert not aol.armed
+
+    # Driver taps brake: disengages openpilot because AOL is disarmed while steering is paused
+    enabled = self.step(aol, sm, make_cs(True, False), brake=True, steering_paused=steering_paused)[0]
+    assert not enabled
+
+    # Driver hits Resume on stock ACC: openpilot re-engages, but steering_paused is sticky so AOL stays disarmed
+    enabled = self.step(aol, sm, make_cs(True, True), steering_paused=steering_paused)[0]
+    assert enabled
+    # Step again while enabled: AOL still stays disarmed
+    assert self.step(aol, sm, make_cs(True, True), steering_paused=steering_paused)[0]
+    assert not aol.armed
+
+    # Driver presses LKA button again -> unpaused, AOL re-arms
+    steering_paused = False
+    assert self.step(aol, sm, make_cs(True, True), steering_paused=steering_paused)[0]
+    assert aol.armed

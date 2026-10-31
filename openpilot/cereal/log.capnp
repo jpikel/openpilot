@@ -134,6 +134,8 @@ struct OnroadEvent @0xc4fa6047f024e718 {
     bigModelFailed @102;
     experimentalModeToggled @105;
     steeringOnly @106;
+    steeringPaused @107;
+    steeringResumed @108;
 
     lowBatteryDEPRECATED @40;
     soundsUnavailableDEPRECATED @47;
@@ -825,6 +827,7 @@ struct SelfdriveState {
 
   # configurable driving settings
   personality @11 :LongitudinalPersonality;
+  steeringPaused @14 :Bool;
 
   enum AudibleAlert {
     none @0;

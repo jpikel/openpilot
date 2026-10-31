@@ -222,7 +222,8 @@ class HudRenderer(Widget):
       self._wheel_alpha_filter.update(255)
       self._wheel_y_filter.update(0)
     else:
-      if ui_state.status == UIStatus.DISENGAGED:
+      steering_paused = getattr(ui_state.sm['selfdriveState'], 'steeringPaused', False)
+      if ui_state.status == UIStatus.DISENGAGED or steering_paused:
         self._wheel_alpha_filter.update(0)
         self._wheel_y_filter.update(wheel_txt.height / 2)
       else:

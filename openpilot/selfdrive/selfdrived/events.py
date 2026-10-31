@@ -1024,6 +1024,23 @@ EVENTS: dict[int, dict[str, Alert | AlertCallbackType]] = {
       Priority.LOW, VisualAlert.none, AudibleAlert.none, 2.),
   },
 
+  # Personal: steering paused via LKA button (ACC only)
+  EventName.steeringPaused: {
+    ET.WARNING: Alert(
+      "Steering Paused",
+      "Adaptive Cruise Only",
+      AlertStatus.normal, AlertSize.mid,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.5),
+  },
+
+  EventName.steeringResumed: {
+    ET.WARNING: Alert(
+      "Steering Active",
+      "",
+      AlertStatus.normal, AlertSize.small,
+      Priority.LOW, VisualAlert.none, AudibleAlert.none, 1.5),
+  },
+
   EventName.userBookmark: {
     ET.PERMANENT: NormalPermanentAlert("Bookmark Saved", duration=1.5),
   },
