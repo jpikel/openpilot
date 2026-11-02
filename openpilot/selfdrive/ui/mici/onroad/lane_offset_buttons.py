@@ -6,7 +6,7 @@ from openpilot.selfdrive.ui.ui_state import ui_state
 from openpilot.system.ui.lib.application import gui_app, FontWeight, MousePos
 from openpilot.system.ui.lib.text_measure import measure_text_cached
 
-# Personal: big -/+ tap zones in the bottom corners of the onroad view to nudge lane position.
+# Personal: big -/+ tap zones at the middle of the left/right edges of the onroad view to nudge lane position.
 # The tap zone is larger than the drawn button so it is easy to hit while driving.
 ZONE_SIZE = 150
 BUTTON_SIZE = 96
@@ -14,7 +14,8 @@ BUTTON_MARGIN = 14
 SIGN_LENGTH = 44
 SIGN_THICKNESS = 10
 VALUE_FONT_SIZE = 40
-VALUE_FLASH_SECONDS = 2.5
+VALUE_SHOW_SECONDS = 30.0  # offset text shows this long after a tap, then fades
+VALUE_FADE_SECONDS = 1.0
 
 
 def format_offset(offset_cm: int, is_metric: bool) -> str:
@@ -31,14 +32,15 @@ class LaneOffsetButtons:
     self._font = gui_app.font(FontWeight.BOLD)
     self._offset_cm = clip_offset_cm(ui_state.lane_offset_cm)
     self._pressed_direction = 0
-    self._last_change_time = -VALUE_FLASH_SECONDS
+    self._last_change_time = -VALUE_SHOW_SECONDS
     self._alpha = FirstOrderFilter(0.0, 0.15, 1 / gui_app.target_fps)
     self._rect = rl.Rectangle()
 
   def _zones(self) -> tuple[rl.Rectangle, rl.Rectangle]:
     r = self._rect
-    left = rl.Rectangle(r.x, r.y + r.height - ZONE_SIZE, ZONE_SIZE, ZONE_SIZE)
-    right = rl.Rectangle(r.x + r.width - ZONE_SIZE, r.y + r.height - ZONE_SIZE, ZONE_SIZE, ZONE_SIZE)
+    y = r.y + (r.height - ZONE_SIZE) / 2
+    left = rl.Rectangle(r.x, y, ZONE_SIZE, ZONE_SIZE)
+    right = rl.Rectangle(r.x + r.width - ZONE_SIZE, y, ZONE_SIZE, ZONE_SIZE)
     return left, right
 
   def _hit(self, pos: MousePos) -> int:
@@ -72,7 +74,7 @@ class LaneOffsetButtons:
   def render(self, rect: rl.Rectangle, visible: bool, view_pressed: bool) -> None:
     self._rect = rect
     # pick up changes made elsewhere (settings reset), but don't fight a tap whose write may not have landed yet
-    if rl.get_time() - self._last_change_time > VALUE_FLASH_SECONDS + 2.0:
+    if rl.get_time() - self._last_change_time > 2.0:
       self._offset_cm = clip_offset_cm(ui_state.lane_offset_cm)
 
     self._alpha.update(float(visible))
@@ -85,7 +87,7 @@ class LaneOffsetButtons:
     left, right = self._zones()
     for direction, zone in ((-1, left), (1, right)):
       cx = zone.x + BUTTON_MARGIN + BUTTON_SIZE / 2 if direction < 0 else zone.x + zone.width - BUTTON_MARGIN - BUTTON_SIZE / 2
-      cy = zone.y + zone.height - BUTTON_MARGIN - BUTTON_SIZE / 2
+      cy = zone.y + zone.height / 2
       pressed = self._pressed_direction == direction
       bg = rl.Color(255, 255, 255, int(110 * self._alpha.x)) if pressed else rl.Color(0, 0, 0, int(140 * self._alpha.x))
       rl.draw_circle(int(cx), int(cy), BUTTON_SIZE / 2, bg)
@@ -96,12 +98,12 @@ class LaneOffsetButtons:
       if direction > 0:
         rl.draw_rectangle_rec(rl.Rectangle(cx - SIGN_THICKNESS / 2, cy - SIGN_LENGTH / 2, SIGN_THICKNESS, SIGN_LENGTH), fg)
 
-    # current offset: bright for a moment after a tap, then dim (hidden when centered)
-    flashing = rl.get_time() - self._last_change_time < VALUE_FLASH_SECONDS
-    if flashing or self._offset_cm != 0:
+    # current offset: shown for a while after a tap, then fades away
+    remaining = VALUE_SHOW_SECONDS - (rl.get_time() - self._last_change_time)
+    if remaining > 0:
       text = format_offset(self._offset_cm, ui_state.is_metric)
       size = measure_text_cached(self._font, text, VALUE_FONT_SIZE)
       pos = rl.Vector2(rect.x + (rect.width - size.x) / 2, rect.y + rect.height - size.y - BUTTON_MARGIN)
-      text_alpha = (1.0 if flashing else 0.55) * self._alpha.x
+      text_alpha = min(1.0, remaining / VALUE_FADE_SECONDS) * self._alpha.x
       rl.draw_text_ex(self._font, text, rl.Vector2(pos.x + 2, pos.y + 2), VALUE_FONT_SIZE, 0, rl.Color(0, 0, 0, int(160 * text_alpha)))
       rl.draw_text_ex(self._font, text, pos, VALUE_FONT_SIZE, 0, rl.Color(255, 255, 255, int(255 * text_alpha)))

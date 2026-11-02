@@ -128,7 +128,10 @@ class SelfdriveD:
     self.not_running_prev = None
     self.personality = self.params.get("LongitudinalPersonality", return_default=True)
     self.distance_button_frame = None  # frame of the current distance-button press, None if not held/consumed
-    self.steering_paused = False
+    # Personal: steering pause (stock ACC only). Toggled by the onroad button (SteeringPaused param) or the LKA button
+    self.steering_paused = self.params.get_bool("SteeringPaused")
+    self.steering_paused_prev = self.steering_paused
+    self.steering_paused_param = self.steering_paused  # last value seen by params_thread
     self.recalibrating_seen = False
     self.dm_lockout_set = False
     self.dm_uncertain_alerted = False
@@ -491,10 +494,11 @@ class SelfdriveD:
     for be in CS.buttonEvents:
       if be.type == ButtonType.lkas and be.pressed:
         self.steering_paused = not self.steering_paused
-        if self.steering_paused:
-          self.events.add(EventName.steeringPaused)
-        else:
-          self.events.add(EventName.steeringResumed)
+        self.params.put_bool("SteeringPaused", self.steering_paused, block=True)
+
+    if self.steering_paused != self.steering_paused_prev:
+      self.events.add(EventName.steeringPaused if self.steering_paused else EventName.steeringResumed)
+      self.steering_paused_prev = self.steering_paused
 
   def data_sample(self):
     _car_state = messaging.recv_one(self.car_state_sock)
@@ -603,6 +607,11 @@ class SelfdriveD:
       self.is_ldw_enabled = self.params.get_bool("IsLdwEnabled")
       self.disengage_on_accelerator = self.params.get_bool("DisengageOnAccelerator")
       self.personality = self.params.get("LongitudinalPersonality", return_default=True)
+      # only apply changes, so a read that raced an LKA button write can't undo it
+      steering_paused = self.params.get_bool("SteeringPaused")
+      if steering_paused != self.steering_paused_param:
+        self.steering_paused_param = steering_paused
+        self.steering_paused = steering_paused
       time.sleep(0.1)
 
   def run(self):
