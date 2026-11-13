@@ -184,10 +184,11 @@ class ImmediateDisableAlert(Alert):
 
 class EngagementAlert(Alert):
   def __init__(self, audible_alert: log.SelfdriveState.AudibleAlert):
+    # jpikel: engage/disengage chimes silenced for a quieter device; warnings are unaffected
     super().__init__("", "",
                      AlertStatus.normal, AlertSize.none,
                      Priority.MID, VisualAlert.none,
-                     audible_alert, .2),
+                     AudibleAlert.none, .2),
 
 
 class NormalPermanentAlert(Alert):
