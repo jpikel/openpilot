@@ -1,4 +1,4 @@
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.ui.ui_state import ui_state
@@ -33,7 +33,7 @@ class SteeringPauseButton:
     return rl.Rectangle(r.x + (r.width - ZONE_WIDTH) / 2, r.y, ZONE_WIDTH, ZONE_HEIGHT)
 
   def _hit(self, pos: MousePos) -> bool:
-    return self._alpha.x >= 0.5 and rl.check_collision_point_rec(pos, self._zone())
+    return self._alpha.x >= 0.5 and rl.check_collision_point_rec(rl.Vector2(pos.x, pos.y), self._zone())
 
   def _paused(self) -> bool:
     actual = ui_state.sm['selfdriveState'].steeringPaused

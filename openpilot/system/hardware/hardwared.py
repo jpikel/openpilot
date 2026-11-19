@@ -34,7 +34,6 @@ from openpilot.system.athena.registration import UNREGISTERED_DONGLE_ID
 ThermalStatus = log.DeviceState.ThermalStatus
 NetworkType = log.DeviceState.NetworkType
 NetworkStrength = log.DeviceState.NetworkStrength
-CURRENT_TAU = 15.   # 15s time constant
 TEMP_TAU = 5.   # 5s time constant
 DISCONNECT_TIMEOUT = 5.  # wait 5 seconds before going offroad after disconnect so you get an alert
 PANDA_STATES_TIMEOUT = round(1000 / SERVICE_LIST['pandaStates'].frequency * 1.5)  # 1.5x the expected pandaState frequency
@@ -366,9 +365,6 @@ def hardware_thread(end_event, hw_queue) -> None:
 
     startup_conditions["not_flashing_chestnut"] = not chestnut.flashing
 
-    # ensure device is fully booted
-    startup_conditions["device_booted"] = startup_conditions.get("device_booted", False) or HARDWARE.booted()
-
     # if the temperature enters the danger zone, go offroad to cool down
     onroad_conditions["device_temp_good"] = thermal_status < ThermalStatus.critical
     extra_text = f"{offroad_comp_temp:.1f}C"
@@ -382,7 +378,7 @@ def hardware_thread(end_event, hw_queue) -> None:
     if not PC:
       # we enforce this for our software, but you are welcome
       # to make a different decision in your software
-      startup_conditions["registered_device"] = PC or (params.get("DongleId") != UNREGISTERED_DONGLE_ID)
+      startup_conditions["registered_device"] = params.get("DongleId") != UNREGISTERED_DONGLE_ID
 
     # Handle offroad/onroad transition
     should_start = all(onroad_conditions.values())

@@ -1,4 +1,4 @@
-import pyray as rl
+import raylib_nb as rl
 
 from openpilot.common.filter_simple import FirstOrderFilter
 from openpilot.selfdrive.controls.lib.lane_offset import LANE_OFFSET_STEP_CM, clip_offset_cm
@@ -47,9 +47,9 @@ class LaneOffsetButtons:
     if self._alpha.x < 0.5:
       return 0
     left, right = self._zones()
-    if rl.check_collision_point_rec(pos, left):
+    if rl.check_collision_point_rec(rl.Vector2(pos.x, pos.y), left):
       return -1
-    if rl.check_collision_point_rec(pos, right):
+    if rl.check_collision_point_rec(rl.Vector2(pos.x, pos.y), right):
       return 1
     return 0
 
