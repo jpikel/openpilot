@@ -91,7 +91,9 @@ class LaneOffsetButtons:
       pressed = self._pressed_direction == direction
       bg = rl.Color(255, 255, 255, int(110 * self._alpha.x)) if pressed else rl.Color(0, 0, 0, int(140 * self._alpha.x))
       rl.draw_circle(int(cx), int(cy), BUTTON_SIZE / 2, bg)
-      rl.draw_circle_lines(int(cx), int(cy), BUTTON_SIZE / 2, rl.Color(255, 255, 255, int(120 * self._alpha.x)))
+      # raylib_nb has no draw_circle_lines; a 2px ring draws the same outline
+      rl.draw_ring(rl.Vector2(cx, cy), BUTTON_SIZE / 2 - 2, BUTTON_SIZE / 2, 0, 360, 48,
+                   rl.Color(255, 255, 255, int(120 * self._alpha.x)))
 
       fg = rl.Color(255, 255, 255, int(235 * self._alpha.x))
       rl.draw_rectangle_rec(rl.Rectangle(cx - SIGN_LENGTH / 2, cy - SIGN_THICKNESS / 2, SIGN_LENGTH, SIGN_THICKNESS), fg)
