@@ -130,9 +130,10 @@ class Controls:
     if self.sm.valid['lateralManeuverPlan']:
       new_desired_curvature = self.sm['lateralManeuverPlan'].desiredCurvature if CC.latActive else self.curvature
     else:
-      new_desired_curvature = model_v2.action.desiredCurvature if CC.latActive else self.curvature
+      model_curvature = model_v2.action.desiredCurvature
+      new_desired_curvature = model_curvature if CC.latActive else self.curvature
       new_desired_curvature += self.lane_offset.update(CC.latActive, CS.vEgo, model_v2.meta.laneChangeState,
-                                                       model_v2, CS.steeringPressed, self.lane_auto_center)
+                                                       model_v2, CS.steeringPressed, self.lane_auto_center, model_curvature)
     self.desired_curvature, curvature_limited = clip_curvature(CS.vEgo, self.desired_curvature, new_desired_curvature, lp.roll)
     lat_delay = self.sm["lateralDelay"].lateralDelay + LAT_SMOOTH_SECONDS
 

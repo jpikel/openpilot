@@ -5,7 +5,8 @@ import pytest
 from openpilot.cereal import log
 from openpilot.common.realtime import DT_CTRL
 from openpilot.selfdrive.controls.lib.lane_offset import (LaneOffset, LANE_OFFSET_MAX_CM, LOOKAHEAD_TIME, MAX_BIAS_LAT_ACCEL,
-                                                          MAX_LEARNED, measure_lane_position)
+                                                          MAX_LEARNED, measure_lane_position, CURVE_GAIN_INIT,
+                                                          CURVE_GAIN_MAX, MAX_CURVE_BIAS)
 
 LaneChangeState = log.LaneChangeState
 
@@ -226,3 +227,65 @@ class TestAutoCenterClosedLoop:
     _, _, learned, frozen = simulate(25.0, 2.0, invalid_after=40.0)
     assert frozen is not None and frozen > 0
     assert learned == frozen
+
+
+# Personal: curve term tests
+def curve_step(lo, model, lat_accel, v_ego=30.0, steps=1, **kw):
+  bias = 0.0
+  for _ in range(steps):
+    bias = lo.update(True, v_ego, kw.get("lane_change_state", LaneChangeState.off), model, kw.get("steering_pressed", False),
+                     kw.get("auto_center", True), lat_accel / v_ego ** 2)
+  return bias * v_ego ** 2
+
+
+class TestAutoCenterCurve:
+  def test_pushes_outward_immediately(self):
+    # right curve (positive lat accel): bias is to the left, and there on the first frame
+    assert curve_step(LaneOffset(), make_model_at(0.0), 1.5) == pytest.approx(-CURVE_GAIN_INIT * 1.5, abs=1e-3)
+    assert curve_step(LaneOffset(), make_model_at(0.0), -1.5) == pytest.approx(CURVE_GAIN_INIT * 1.5, abs=1e-3)
+
+  def test_gone_when_curve_ends(self):
+    lo = LaneOffset()
+    curve_step(lo, make_model_at(0.0), -1.5, steps=1000)
+    assert abs(curve_step(lo, make_model_at(0.0), 0.0)) < 1e-6
+
+  def test_off_without_auto_center_and_in_lane_change(self):
+    assert curve_step(LaneOffset(), make_model_at(0.0), 1.5, auto_center=False) == 0.0
+    assert curve_step(LaneOffset(), make_model_at(0.0), 1.5, lane_change_state=LaneChangeState.laneChangeStarting) == 0.0
+
+  def test_capped(self):
+    lo = LaneOffset()
+    lo.curve_gain = CURVE_GAIN_MAX
+    assert curve_step(lo, make_model_at(0.0), 3.0) == pytest.approx(-MAX_CURVE_BIAS, abs=1e-3)
+    assert curve_step(lo, make_model_at(0.0), -3.0) == pytest.approx(MAX_CURVE_BIAS, abs=1e-3)
+
+  def test_slow_term_does_not_wind_up_in_curve(self):
+    # car on the inside of a left curve: the slow term must stay put, only the curve gain moves
+    lo = LaneOffset()
+    curve_step(lo, make_model_at(-0.4), -1.5, steps=2000)
+    assert lo.learned == 0.0
+    assert lo.curve_gain > CURVE_GAIN_INIT
+
+  def test_gain_learning_direction(self):
+    for lat_accel in (1.5, -1.5):
+      inside = 0.4 if lat_accel > 0 else -0.4
+      lo = LaneOffset()
+      curve_step(lo, make_model_at(inside), lat_accel, steps=500)
+      assert lo.curve_gain > CURVE_GAIN_INIT
+      lo = LaneOffset()
+      curve_step(lo, make_model_at(-inside), lat_accel, steps=500)
+      assert lo.curve_gain < CURVE_GAIN_INIT
+
+  def test_gain_clipped_and_frozen(self):
+    lo = LaneOffset()
+    curve_step(lo, make_model_at(0.9), 1.5, steps=20000)
+    assert lo.curve_gain == CURVE_GAIN_MAX
+    curve_step(lo, make_model_at(-0.9), 1.5, steps=20000)
+    assert lo.curve_gain == 0.0
+
+    lo = LaneOffset()
+    curve_step(lo, make_model_at(0.4), 1.5, steps=500, steering_pressed=True)
+    curve_step(lo, make_model_at(0.4, prob=0.3), 1.5, steps=500)
+    curve_step(lo, make_model_at(0.4), 0.5, steps=500)  # between the straight and curve thresholds
+    assert lo.curve_gain == CURVE_GAIN_INIT
+    assert lo.learned == 0.0
